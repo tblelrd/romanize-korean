@@ -33,7 +33,7 @@ mod common_examples {
         assert_eq!(&convert("안녕"), "annyeong");
         assert_eq!(&convert("여보세요"), "yeoboseyo");
 
-        // TODO: Fails because joeun achimieyo instead.
+        // TODO: Fails because joheun achimieyo instead.
         // assert_eq!(&convert("좋은 아침이에요"), "joeun achimieyo");
 
         assert_eq!(&convert("어떻게 지내세요"), "eotteohge jinaeseyo");
@@ -110,6 +110,8 @@ mod functionality_tests {
     fn epenthetic() {
         assert_eq!(&convert("학여울"), "hangnyeoul");
         assert_eq!(&convert("알약"), "allyak");
+        assert_eq!(&convert("솜이불"), "somnibul");
+        assert_eq!(&convert("식용유"), "sigyongnyu");
     }
 
 }
