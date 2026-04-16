@@ -1,5 +1,6 @@
-use crate::hangul::{Choseong, Jongseong, Jungseong, Syllable};
+use crate::hangul::{Choseong, Jamo, Jongseong, Jungseong, Syllable, from_syllables_to_jamo};
 
+#[derive(Debug)]
 pub enum MixedChar {
     Character(char),
     Syllable(Syllable),
@@ -11,6 +12,64 @@ impl From<char> for MixedChar {
             |_| MixedChar::Character(c),
             |s| MixedChar::Syllable(s),
         )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum MixedBlock {
+    String(String),
+    Syllables(Vec<Syllable>),
+}
+
+/// Join hangul sections and non hangul sections.
+/// So it we can do context sensitive romanization.
+impl FromIterator<MixedChar> for Vec<MixedBlock> {
+    fn from_iter<T: IntoIterator<Item = MixedChar>>(iter: T) -> Self {
+        let mut result = vec![];
+        let mut current = None;
+        for c in iter.into_iter() {
+            let Some(block) = &mut current else {
+                current = match c {
+                    MixedChar::Character(c) => Some(
+                        MixedBlock::String(c.to_string()),
+                    ),
+                    MixedChar::Syllable(syllable) => Some(
+                        MixedBlock::Syllables(vec![syllable]),
+                    ),
+                };
+                continue;
+            };
+
+            match block {
+                MixedBlock::String(s) => {
+                    match c {
+                        MixedChar::Character(c) => {
+                            s.push(c);
+                        },
+                        MixedChar::Syllable(syllable) => {
+                            let block = current.unwrap();
+                            result.push(block);
+                            current = Some(MixedBlock::Syllables(vec![syllable]));
+                        },
+                    }
+                },
+                MixedBlock::Syllables(syllables) => {
+                    match c {
+                        MixedChar::Character(c) => {
+                            let block = current.unwrap();
+                            result.push(block);
+                            current = Some(MixedBlock::String(c.to_string()));
+                        },
+                        MixedChar::Syllable(syllable) => {
+                            syllables.push(syllable);
+                        },
+                    }
+                },
+            }
+        }
+        if let Some(current) = current { result.push(current) };
+
+        result
     }
 }
 
@@ -31,6 +90,166 @@ impl Romanizable for MixedChar {
 impl Romanizable for char {
     fn romanize(self) -> String {
         self.to_string()
+    }
+}
+
+impl Romanizable for Vec<MixedBlock> {
+    fn romanize(self) -> String {
+        self.into_iter()
+            .map(|m| m.romanize())
+            .collect()
+    }
+}
+
+impl Romanizable for MixedBlock {
+    fn romanize(self) -> String {
+        match self {
+            MixedBlock::String(s) => s.romanize(),
+            MixedBlock::Syllables(syllables) => syllables.romanize(),
+        }
+    }
+}
+
+impl Romanizable for String {
+    fn romanize(self) -> String {
+        self
+    }
+}
+
+impl Romanizable for Vec<Syllable> {
+    fn romanize(self) -> String {
+        from_syllables_to_jamo(self).romanize()
+    }
+}
+
+/// Romanize a list of jamo.
+/// Will always assume n + r or r + n is ll.
+/// Don't know how to do that morpheme stuff.
+impl Romanizable for Vec<Jamo> {
+    fn romanize(self) -> String {
+        let mut result = String::new();
+        let mut previous = None;
+
+        for i in 0..self.len() {
+            let Some(current) = self.get(i) else { return result };
+
+            let next = self.get(i + 1).and_then(|j| match j {
+                // Get the one after if next is (initial) ㅇ.
+                Jamo::Choseong(Choseong::Ieung) => self.get(i + 2),
+                j => Some(j)
+            });
+
+            let s = &match current {
+                Jamo::Jungseong(jungseong) => jungseong.clone().romanize(),
+                Jamo::Choseong(choseong) => match (choseong, previous, next) {
+                    // ㄹㄹ becomes ll.
+                    (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Rieul)), _) => "l".into(),
+                    // This is because ᆫ is also ㄹ in this situation.
+                    (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Nieun)), _) => "l".into(),
+                    // This is opposite.
+                    (Choseong::Nieun, Some(Jamo::Jongseong(Jongseong::Rieul)), _) => "l".into(),
+                    
+                    // ㄹafter ng does this ig.
+                    (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Ieung)), _) => "n".into(),
+
+                    // Nasal
+                    (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Giyeok)), _) => "n".into(),
+                    (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Bieup)), _) => "n".into(),
+                    (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Digeut)), _) => "n".into(),
+
+                    // epenthetic
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YEO))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YO))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YU))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YA))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YAE))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YEO))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YO))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YU))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YA))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YAE))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YEO))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YO))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YU))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YA))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YAE))) => "n".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YEO))) => "l".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YO))) => "l".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YU))) => "l".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YA))) => "l".into(),
+                    (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YAE))) => "l".into(),
+
+                    (c, _, _) => c.clone().romanize(),
+                },
+                Jamo::Jongseong(jongseong) => match (jongseong, next) {
+                    // Nasal assimilation
+                    (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Nieun))) => "ng".into(),
+                    (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Mieum))) => "ng".into(),
+                    (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Rieul))) => "m".into(),
+                    (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Nieun))) => "n".into(),
+                    (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Mieum))) => "n".into(),
+                    (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Rieul))) => "m".into(),
+                    (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Nieun))) => "m".into(),
+                    (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Mieum))) => "m".into(),
+                    (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Rieul))) => "m".into(),
+
+                    // Before a vowel (ㅇ not ignored).
+                    (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YEO))) => "ng".into(),
+                    (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YO))) => "ng".into(),
+                    (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YU))) => "ng".into(),
+                    (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YA))) => "ng".into(),
+                    (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YAE))) => "ng".into(),
+                    (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YEO))) => "ng".into(),
+                    (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YO))) => "ng".into(),
+                    (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YU))) => "ng".into(),
+                    (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YA))) => "ng".into(),
+                    (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YAE))) => "ng".into(),
+                    (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YEO))) => "ng".into(),
+                    (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YO))) => "ng".into(),
+                    (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YU))) => "ng".into(),
+                    (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YA))) => "ng".into(),
+                    (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YAE))) => "ng".into(),
+                    (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YEO))) => "l".into(),
+                    (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YO))) => "l".into(),
+                    (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YU))) => "l".into(),
+                    (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YA))) => "l".into(),
+                    (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YAE))) => "l".into(),
+
+                    // Before a vowel (ㅇ ignored).
+                    (Jongseong::Giyeok, Some(Jamo::Jungseong(_))) => "g".into(),
+                    (Jongseong::Digeut, Some(Jamo::Jungseong(_))) => "d".into(),
+                    (Jongseong::Bieup,  Some(Jamo::Jungseong(_))) => "b".into(),
+                    (Jongseong::Rieul,  Some(Jamo::Jungseong(_))) => "r".into(),
+
+                    // Before vowel, instead of trasnforming to t.
+                    (Jongseong::Jieut,  Some(Jamo::Jungseong(_))) => "j".into(),
+                    (Jongseong::Chieut, Some(Jamo::Jungseong(_))) => "ch".into(),
+
+                    // Before consonant.
+                    (Jongseong::Giyeok, Some(Jamo::Choseong(_))) => "k".into(),
+                    (Jongseong::Digeut, Some(Jamo::Choseong(_))) => "t".into(),
+                    (Jongseong::Bieup, Some(Jamo::Choseong(_))) => "p".into(),
+                    (Jongseong::Rieul, Some(Jamo::Choseong(_))) => "l".into(),
+
+                    // n + r = ll?
+                    (Jongseong::Nieun, Some(Jamo::Choseong(Choseong::Rieul))) => "l".into(),
+
+                    // Transforms to t when jonseong.
+                    (Jongseong::Jieut, _) => "t".into(),
+                    (Jongseong::Chieut, _) => "t".into(),
+
+                    // Don't worry about none variants,
+                    // shouldn't be possible to have none since choseong is initial character.
+                    (c, _) => c.clone().romanize(),
+                },
+            };
+
+
+            result += s;
+
+            previous = Some(current.clone());
+        }
+        result
     }
 }
 
@@ -155,7 +374,7 @@ impl Romanizable for Jongseong {
         match self {
             None => "",
             // ᆨ
-            Giyeok => "g",
+            Giyeok => "k",
             // ᆩ
             SsangGiyeok => "kk",
             // ᆪ
@@ -187,7 +406,7 @@ impl Romanizable for Jongseong {
             // ᆷ
             Mieum => "m",
             // ᆸ
-            Bieup => "b",
+            Bieup => "p",
             // ᆹ
             BieupSiot => "bs",
             // ᆺ

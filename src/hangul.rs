@@ -6,7 +6,7 @@
 pub const HANGUL_START: u32 = 0xAC00;
 pub const HANGUL_END:   u32 = 0xD7AF;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Syllable (
     pub Choseong,
     pub Jungseong,
@@ -40,7 +40,25 @@ impl TryFrom<char> for Syllable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+pub enum Jamo {
+    Choseong(Choseong),
+    Jungseong(Jungseong),
+    Jongseong(Jongseong),
+}
+
+pub fn from_syllables_to_jamo(value: Vec<Syllable>) -> Vec<Jamo> {
+    value.into_iter().fold(vec![], |mut js, Syllable (choseong, jungseong, jongseong)| {
+        js.push(Jamo::Choseong(choseong));
+        js.push(Jamo::Jungseong(jungseong));
+        js.push(Jamo::Jongseong(jongseong));
+
+        js
+    })
+}
+
+/// Initial consonant.
+#[derive(Clone, Debug)]
 pub enum Choseong {
     /// ㄱ
     Giyeok,
@@ -112,7 +130,8 @@ impl TryFrom<u32> for Choseong {
     }
 }
 
-#[derive(Debug)]
+/// Final consonant.
+#[derive(Clone, Debug)]
 pub enum Jongseong {
     /// Jongseong is optional.
     None,
@@ -211,7 +230,8 @@ impl TryFrom<u32> for Jongseong {
     }
 }
 
-#[derive(Debug)]
+/// Vowel.
+#[derive(Clone, Debug)]
 pub enum Jungseong {
     /// ㅏ
     A,
