@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+// #![warn(missing_docs, clippy::todo)]
+
 use crate::{hangul::Syllable, romanizer::{MixedBlock, MixedChar, Romanizable}};
 
 mod romanizer;

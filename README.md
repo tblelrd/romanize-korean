@@ -18,9 +18,9 @@ assert_eq!(&korean_romanize::convert("안녕히 가세요"), "annyeonghi gaseyo"
 To check if a string has korean characters:
 
 ```rust
-assert!(has_korean("안녕"));
-assert!(has_korean("안녕 Hello"));
-assert!(!has_korean("Hello"));
+assert!(korean_romanize::has_korean("안녕"));
+assert!(korean_romanize::has_korean("안녕 Hello"));
+assert!(!korean_romanize::has_korean("Hello"));
 ```
 
 # Acknoledgements
