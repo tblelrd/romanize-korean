@@ -21,6 +21,7 @@ pub fn has_korean(input: impl Into<String>) -> bool {
 
 #[cfg(test)]
 mod common_examples {
+    //! Just normal use case scenarios.
     use super::*;
 
     /// Common sentences
@@ -49,6 +50,13 @@ mod functionality_tests {
     //! https://www.korean.go.kr/front_eng/roman/roman_01.do
 
     use super::*;
+
+    #[test]
+    fn test_is_korean() {
+        assert!(has_korean("안녕"));
+        assert!(has_korean("안녕 Hello"));
+        assert!(!has_korean("Hello"));
+    }
 
     /// The sounds ㄱ, ㄷ, and ㅂ are transcribed respectively
     /// as g, d, and b before a vowel; they are transcribed as
