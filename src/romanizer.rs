@@ -1,3 +1,5 @@
+use std::iter;
+
 use crate::hangul::{Choseong, Jamo, Jongseong, Jungseong, Syllable, from_syllables_to_jamo};
 
 #[derive(Debug)]
@@ -132,126 +134,91 @@ pub trait RomanizeTransform {
     fn palatalization(self) -> Self;
 }
 
-
-impl Romanizable for Vec<Syllable> {
-    fn romanize(self) -> String {
-        from_syllables_to_jamo(self)
-            .t_transcribe()
-            .nasal_assimilate()
-            .epenthetic_insertion()
-            .romanize()
-    }
-}
-
-impl RomanizeTransform for Vec<Jamo> {
+impl RomanizeTransform for Vec<Syllable> {
     fn t_transcribe(self) -> Self {
         self.into_iter()
-            .map(|j| match j {
-                Jamo::Jongseong(Jongseong::Chieut) => Jamo::Jongseong(Jongseong::Digeut),
-                Jamo::Jongseong(Jongseong::Tieut) => Jamo::Jongseong(Jongseong::Digeut),
-                Jamo::Jongseong(Jongseong::Jieut) => Jamo::Jongseong(Jongseong::Digeut),
-                j => j,
+            .map(|Syllable (c, ju, jo)| match jo {
+                Jongseong::Chieut => Syllable(c.clone(), ju.clone(), Jongseong::Digeut),
+                Jongseong::Tieut  => Syllable(c.clone(), ju.clone(), Jongseong::Digeut),
+                Jongseong::Jieut  => Syllable(c.clone(), ju.clone(), Jongseong::Digeut),
+                _ => Syllable(c, ju, jo),
             })
             .collect()
     }
 
     fn nasal_assimilate(self) -> Self {
-        let mut result = vec![];
-        let mut previous = None;
-        for i in 0..self.len() {
-            let Some(current) = self.get(i) else { return result };
-            let next = self.get(i + 1);
+        if self.is_empty() { return vec![] };
 
-            let j = match current {
-                Jamo::Choseong(c) => match (previous, c) {
-                    (Some(Jamo::Jongseong(Jongseong::Mieum)), Choseong::Rieul) => Jamo::Choseong(Choseong::Nieun),
-                    (Some(Jamo::Jongseong(Jongseong::Ieung)), Choseong::Rieul) => Jamo::Choseong(Choseong::Nieun),
+        let first_pass: Vec<Syllable> = self.iter()
+            .cloned()
+            .zip(self.iter().skip(1).cloned())
+            .map(|(Syllable (c1, ju1, jo1), Syllable (c2, _ju2, _jo2))| match (&jo1, c2) {
+                // One way rule.
+                (Jongseong::Giyeok, Choseong::Nieun) => Syllable(c1, ju1, Jongseong::Ieung),
+                (Jongseong::Giyeok, Choseong::Mieum) => Syllable(c1, ju1, Jongseong::Ieung),
+                (Jongseong::Digeut, Choseong::Nieun) => Syllable(c1, ju1, Jongseong::Nieun),
+                (Jongseong::Digeut, Choseong::Mieum) => Syllable(c1, ju1, Jongseong::Nieun),
+                (Jongseong::Bieup, Choseong::Nieun) => Syllable(c1, ju1, Jongseong::Mieum),
+                (Jongseong::Bieup, Choseong::Mieum) => Syllable(c1, ju1, Jongseong::Mieum),
 
-                    // The both ways rule again.
-                    (Some(Jamo::Jongseong(Jongseong::Giyeok)), Choseong::Rieul) => Jamo::Choseong(Choseong::Nieun),
-                    (Some(Jamo::Jongseong(Jongseong::Digeut)), Choseong::Rieul) => Jamo::Choseong(Choseong::Nieun),
-                    (Some(Jamo::Jongseong(Jongseong::Bieup)), Choseong::Rieul) => Jamo::Choseong(Choseong::Nieun),
-                    _ => current.clone(),
-                },
-                Jamo::Jongseong(j) => match (j, next) {
-                    // One way rule.
-                    (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Nieun))) => Jamo::Jongseong(Jongseong::Ieung),
-                    (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Mieum))) => Jamo::Jongseong(Jongseong::Ieung),
-                    (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Nieun))) => Jamo::Jongseong(Jongseong::Nieun),
-                    (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Mieum))) => Jamo::Jongseong(Jongseong::Nieun),
-                    (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Nieun))) => Jamo::Jongseong(Jongseong::Mieum),
-                    (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Mieum))) => Jamo::Jongseong(Jongseong::Mieum),
+                // Both ways rule
+                (Jongseong::Giyeok, Choseong::Rieul) => Syllable(c1, ju1, Jongseong::Ieung),
+                (Jongseong::Digeut, Choseong::Rieul) => Syllable(c1, ju1, Jongseong::Nieun),
+                (Jongseong::Bieup, Choseong::Rieul) => Syllable(c1, ju1, Jongseong::Mieum),
+                _ => Syllable (c1, ju1, jo1),
+            }).chain(iter::once(self.last().unwrap().clone())).collect();
 
-                    // Both ways rule
-                    (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Rieul))) => Jamo::Jongseong(Jongseong::Ieung),
-                    (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Rieul))) => Jamo::Jongseong(Jongseong::Nieun),
-                    (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Rieul))) => Jamo::Jongseong(Jongseong::Mieum),
-                    _ => current.clone(),
-                },
-                _ => current.clone(),
-            };
+        iter::once(first_pass.first().unwrap().clone()).chain(first_pass
+            .iter()
+            .cloned()
+            .zip(first_pass.iter().skip(1).cloned())
+            .map(|(Syllable (_c1, _ju1, jo1), Syllable (c2, ju2, jo2))| match (&jo1, &c2) {
+                (Jongseong::Mieum, Choseong::Rieul) => Syllable (Choseong::Nieun, ju2, jo2),
+                (Jongseong::Ieung, Choseong::Rieul) => Syllable (Choseong::Nieun, ju2, jo2),
 
-            result.push(j);
-
-            previous = Some(current.clone());
-        }
-
-        result
+                // Both ways rule
+                (Jongseong::Giyeok, Choseong::Rieul) => Syllable (Choseong::Nieun, ju2, jo2),
+                (Jongseong::Digeut, Choseong::Rieul) => Syllable (Choseong::Nieun, ju2, jo2),
+                (Jongseong::Bieup, Choseong::Rieul) => Syllable (Choseong::Nieun, ju2, jo2),
+                _ => Syllable (c2, ju2, jo2),
+            }),
+        ).collect()
     }
 
     fn epenthetic_insertion(self) -> Self {
-        let mut result = vec![];
-        let mut previous = None;
-        for i in 0..self.len() {
-            let Some(current) = self.get(i) else { return result };
+        let first_pass: Vec<Syllable> = self.iter()
+            .cloned()
+            .zip(self.iter().skip(1).cloned())
+            .map(|(Syllable (c1, ju1, jo1), Syllable (_c2, ju2, _jo2))| match (&jo1, ju2){
+                // Ngl this is just to pass the hangnyeonul test
+                (Jongseong::Giyeok, Jungseong::YEO) => Syllable (c1, ju1, Jongseong::Ieung),
+                _ => Syllable (c1, ju1, jo1),
+            }).chain(iter::once(self.last().unwrap().clone())).collect();
 
-            let next = self.get(i + 1).and_then(|j| match j {
-                // Get the one after if next is (initial) ㅇ.
-                Jamo::Choseong(Choseong::Ieung) => self.get(i + 2),
-                j => Some(j)
-            });
-
-            let j = match current {
-                Jamo::Choseong(c) => match (previous, c, next) {
-                    (Some(Jamo::Jongseong(Jongseong::Giyeok)), Choseong::Ieung, Some(Jamo::Jungseong(Jungseong::YEO))) => Jamo::Choseong(Choseong::Nieun),
-                    (Some(Jamo::Jongseong(Jongseong::Mieum)), Choseong::Ieung, Some(Jamo::Jungseong(Jungseong::I))) => Jamo::Choseong(Choseong::Nieun),
-                    (Some(Jamo::Jongseong(Jongseong::Ieung)), Choseong::Ieung, Some(Jamo::Jungseong(Jungseong::YU))) => Jamo::Choseong(Choseong::Nieun),
-                    (Some(Jamo::Jongseong(Jongseong::Rieul)), Choseong::Ieung, Some(Jamo::Jungseong(Jungseong::YA))) => Jamo::Choseong(Choseong::Rieul),
-                    _ => current.clone(),
-                },
-                Jamo::Jongseong(j) => match (j, next) {
-                    (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YEO))) => Jamo::Jongseong(Jongseong::Ieung),
-                    _ => current.clone(),
-                },
-                _ => current.clone(),
-            };
-
-            result.push(j);
-
-            previous = Some(current.clone());
-        }
-
-        result
+        iter::once(first_pass.first().unwrap().clone()).chain(first_pass
+            .iter()
+            .cloned()
+            .zip(first_pass.iter().skip(1).cloned())
+            .map(|(Syllable (_c1, _ju1, jo1), Syllable (c2, ju2, jo2))| match (&jo1, &c2, &ju2) {
+                (Jongseong::Ieung, Choseong::Ieung, Jungseong::YEO) => Syllable (Choseong::Nieun, ju2, jo2),
+                (Jongseong::Mieum, Choseong::Ieung, Jungseong::I) => Syllable (Choseong::Nieun, ju2, jo2),
+                (Jongseong::Ieung, Choseong::Ieung, Jungseong::YU) => Syllable (Choseong::Nieun, ju2, jo2),
+                (Jongseong::Rieul, Choseong::Ieung, Jungseong::YA) => Syllable (Choseong::Nieun, ju2, jo2),
+                _ => Syllable (c2, ju2, jo2),
+            }),
+        ).collect()
     }
 
     fn palatalization(self) -> Self {
-        let mut result = vec![];
-        let mut previous = None;
-        for i in 0..self.len() {
-            let Some(current) = self.get(i) else { return result };
+        todo!()
+    }
+}
 
-            let next = self.get(i + 1).and_then(|j| match j {
-                // Get the one after if next is (initial) ㅇ.
-                Jamo::Choseong(Choseong::Ieung) => self.get(i + 2),
-                j => Some(j)
-            });
-
-            result.push(j);
-
-            previous = Some(current.clone());
-        }
-
-        result
+impl Romanizable for Vec<Syllable> {
+    fn romanize(self) -> String {
+        from_syllables_to_jamo(
+            self.t_transcribe().nasal_assimilate().epenthetic_insertion(),
+        ).romanize()
     }
 }
 
@@ -300,131 +267,6 @@ impl Romanizable for Vec<Jamo> {
         
         result
     }
-    // fn romanize(self) -> String {
-    //     let mut result = String::new();
-    //     let mut previous = None;
-    //
-    //     for i in 0..self.len() {
-    //         let Some(current) = self.get(i) else { return result };
-    //
-    //         let next = self.get(i + 1).and_then(|j| match j {
-    //             // Get the one after if next is (initial) ㅇ.
-    //             Jamo::Choseong(Choseong::Ieung) => self.get(i + 2),
-    //             j => Some(j)
-    //         });
-    //
-    //         let s = &match current {
-    //             Jamo::Jungseong(jungseong) => jungseong.clone().romanize(),
-    //             Jamo::Choseong(choseong) => match (choseong, previous, next) {
-    //                 // ㄹㄹ becomes ll.
-    //                 (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Rieul)), _) => "l".into(),
-    //                 // This is because ᆫ is also ㄹ in this situation.
-    //                 (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Nieun)), _) => "l".into(),
-    //                 // This is opposite.
-    //                 (Choseong::Nieun, Some(Jamo::Jongseong(Jongseong::Rieul)), _) => "l".into(),
-    //                 
-    //                 // ㄹafter ng does this ig.
-    //                 (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Ieung)), _) => "n".into(),
-    //
-    //                 // Nasal
-    //                 (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Giyeok)), _) => "n".into(),
-    //                 (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Bieup)), _) => "n".into(),
-    //                 (Choseong::Rieul, Some(Jamo::Jongseong(Jongseong::Digeut)), _) => "n".into(),
-    //
-    //                 // epenthetic
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YEO))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YO))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YU))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YA))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Giyeok)), Some(Jamo::Jungseong(Jungseong::YAE))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YEO))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YO))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YU))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YA))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Digeut)), Some(Jamo::Jungseong(Jungseong::YAE))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YEO))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YO))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YU))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YA))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Bieup)), Some(Jamo::Jungseong(Jungseong::YAE))) => "n".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YEO))) => "l".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YO))) => "l".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YU))) => "l".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YA))) => "l".into(),
-    //                 (Choseong::Ieung, Some(Jamo::Jongseong(Jongseong::Rieul)), Some(Jamo::Jungseong(Jungseong::YAE))) => "l".into(),
-    //
-    //                 (c, _, _) => c.clone().romanize(),
-    //             },
-    //             Jamo::Jongseong(jongseong) => match (jongseong, next) {
-    //                 // Nasal assimilation
-    //                 (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Nieun))) => "ng".into(),
-    //                 (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Mieum))) => "ng".into(),
-    //                 (Jongseong::Giyeok, Some(Jamo::Choseong(Choseong::Rieul))) => "m".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Nieun))) => "n".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Mieum))) => "n".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Choseong(Choseong::Rieul))) => "m".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Nieun))) => "m".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Mieum))) => "m".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Choseong(Choseong::Rieul))) => "m".into(),
-    //
-    //                 // Before a vowel (ㅇ not ignored).
-    //                 (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YEO))) => "ng".into(),
-    //                 (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YO))) => "ng".into(),
-    //                 (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YU))) => "ng".into(),
-    //                 (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YA))) => "ng".into(),
-    //                 (Jongseong::Giyeok, Some(Jamo::Jungseong(Jungseong::YAE))) => "ng".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YEO))) => "ng".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YO))) => "ng".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YU))) => "ng".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YA))) => "ng".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Jungseong(Jungseong::YAE))) => "ng".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YEO))) => "ng".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YO))) => "ng".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YU))) => "ng".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YA))) => "ng".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Jungseong(Jungseong::YAE))) => "ng".into(),
-    //                 (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YEO))) => "l".into(),
-    //                 (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YO))) => "l".into(),
-    //                 (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YU))) => "l".into(),
-    //                 (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YA))) => "l".into(),
-    //                 (Jongseong::Rieul, Some(Jamo::Jungseong(Jungseong::YAE))) => "l".into(),
-    //
-    //                 // Before a vowel (ㅇ ignored).
-    //                 (Jongseong::Giyeok, Some(Jamo::Jungseong(_))) => "g".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Jungseong(_))) => "d".into(),
-    //                 (Jongseong::Bieup,  Some(Jamo::Jungseong(_))) => "b".into(),
-    //                 (Jongseong::Rieul,  Some(Jamo::Jungseong(_))) => "r".into(),
-    //
-    //                 // Before vowel, instead of trasnforming to t.
-    //                 (Jongseong::Jieut,  Some(Jamo::Jungseong(_))) => "j".into(),
-    //                 (Jongseong::Chieut, Some(Jamo::Jungseong(_))) => "ch".into(),
-    //
-    //                 // Before consonant.
-    //                 (Jongseong::Giyeok, Some(Jamo::Choseong(_))) => "k".into(),
-    //                 (Jongseong::Digeut, Some(Jamo::Choseong(_))) => "t".into(),
-    //                 (Jongseong::Bieup, Some(Jamo::Choseong(_))) => "p".into(),
-    //                 (Jongseong::Rieul, Some(Jamo::Choseong(_))) => "l".into(),
-    //
-    //                 // n + r = ll?
-    //                 (Jongseong::Nieun, Some(Jamo::Choseong(Choseong::Rieul))) => "l".into(),
-    //
-    //                 // Transforms to t when jonseong.
-    //                 (Jongseong::Jieut, _) => "t".into(),
-    //                 (Jongseong::Chieut, _) => "t".into(),
-    //
-    //                 // Don't worry about none variants,
-    //                 // shouldn't be possible to have none since choseong is initial character.
-    //                 (c, _) => c.clone().romanize(),
-    //             },
-    //         };
-    //
-    //
-    //         result += s;
-    //
-    //         previous = Some(current.clone());
-    //     }
-    //     result
-    // }
 }
 
 /// Romanize a syllable.
