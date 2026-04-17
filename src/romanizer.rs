@@ -1,6 +1,6 @@
 use std::iter;
 
-use crate::hangul::{Choseong, Jamo, Jongseong, Jungseong, Syllable, from_syllables_to_jamo};
+use crate::hangul::{Choseong, Jongseong, Jungseong, Syllable};
 
 #[derive(Debug)]
 pub enum MixedChar {
@@ -151,7 +151,7 @@ impl RomanizeTransform for Vec<Syllable> {
 
         let first_pass: Vec<Syllable> = self.iter()
             .cloned()
-            .zip(self.iter().skip(1).cloned())
+            .zip(self.iter().skip(1))
             .map(|(Syllable (c1, ju1, jo1), Syllable (c2, _ju2, _jo2))| match (&jo1, c2) {
                 // One way rule.
                 (Jongseong::Giyeok, Choseong::Nieun) => Syllable(c1, ju1, Jongseong::Ieung),
@@ -188,7 +188,7 @@ impl RomanizeTransform for Vec<Syllable> {
     fn epenthetic_insertion(self) -> Self {
         let first_pass: Vec<Syllable> = self.iter()
             .cloned()
-            .zip(self.iter().skip(1).cloned())
+            .zip(self.iter().skip(1))
             .map(|(Syllable (c1, ju1, jo1), Syllable (_c2, ju2, _jo2))| match (&jo1, ju2){
                 // Ngl this is just to pass the hangnyeonul test
                 (Jongseong::Giyeok, Jungseong::YEO) => Syllable (c1, ju1, Jongseong::Ieung),
@@ -210,62 +210,86 @@ impl RomanizeTransform for Vec<Syllable> {
     }
 
     fn palatalization(self) -> Self {
-        todo!()
-    }
-}
+        let (moved_forward, mut syllables) = self.iter().cloned().zip(self.iter().skip(1))
+            .fold((
+                None,
+                vec![],
+            ), |(moved_forward, mut list): (
+                Option<Choseong>,
+                Vec<Syllable>,
+            ), (Syllable (mut c1, ju1, jo1), Syllable (c2, ju2, _jo2))| {
+                if let Some(moved) = moved_forward {
+                    c1 = moved.clone();
+                }
 
-impl Romanizable for Vec<Syllable> {
-    fn romanize(self) -> String {
-        from_syllables_to_jamo(
-            self.t_transcribe().nasal_assimilate().epenthetic_insertion(),
-        ).romanize()
-    }
-}
+                let moved_forward = match (&jo1, c2, ju2) {
+                    (Jongseong::Digeut, Choseong::Ieung, Jungseong::I) => {
+                        Some(Choseong::Jieut)
+                    },
+                    (Jongseong::Tieut, Choseong::Ieung, Jungseong::I) => {
+                        Some(Choseong::Chieut)
+                    },
+                    (Jongseong::Digeut, Choseong::Hieuh, Jungseong::I) => {
+                        Some(Choseong::Chieut)
+                    }
+                    _ => None,
+                };
 
-/// Romanize a list of jamo.
-/// Will always assume n + r or r + n is ll.
-/// Don't know how to do that morpheme stuff.
-impl Romanizable for Vec<Jamo> {
-    fn romanize(self) -> String {
-        let mut result = String::new();
-        let mut previous = None;
+                list.push(Syllable (c1, ju1, if moved_forward.is_none() { jo1 } else { Jongseong::None }));
 
-        for i in 0..self.len() {
-            let Some(current) = self.get(i) else { return result };
-
-            let next = self.get(i + 1).and_then(|j| match j {
-                // Get the one after if next is (initial) ㅇ.
-                Jamo::Choseong(Choseong::Ieung) => self.get(i + 2),
-                j => Some(j)
+                (moved_forward, list)
             });
 
-            let s = &match current {
-                Jamo::Jungseong(jungseong) => jungseong.clone().romanize(),
-                Jamo::Choseong(choseong) => match (previous, choseong) {
-                    (Some(Jamo::Jongseong(Jongseong::Rieul)), Choseong::Rieul) => "l".into(),
-                    (Some(Jamo::Jongseong(Jongseong::Nieun)), Choseong::Rieul) => "l".into(),
-                    (Some(Jamo::Jongseong(Jongseong::Rieul)), Choseong::Nieun) => "l".into(),
-                    (_, c) => c.clone().romanize(),
-                },
-                Jamo::Jongseong(jongseong) => match (jongseong, next) {
-                    // Before a vowel (ㅇ ignored).
-                    (Jongseong::Giyeok, Some(Jamo::Jungseong(_))) => "g".into(),
-                    (Jongseong::Digeut, Some(Jamo::Jungseong(_))) => "d".into(),
-                    (Jongseong::Bieup,  Some(Jamo::Jungseong(_))) => "b".into(),
-                    (Jongseong::Rieul,  Some(Jamo::Jungseong(_))) => "r".into(),
-
-                    // n is l before r.
-                    (Jongseong::Nieun,  Some(Jamo::Choseong(Choseong::Rieul))) => "l".into(),
-                    (j, _) => j.clone().romanize(),
-                },
-            };
-
-            result += s;
-
-            previous = Some(current.clone());
+        if let Some(Syllable (c, ju, jo)) = self.last().cloned() {
+            syllables.push(Syllable (moved_forward.unwrap_or(c), ju, jo));
         }
-        
-        result
+        syllables
+    }
+}
+
+/// Will always assume n + r or r + n is ll.
+/// Don't know how to do that morpheme stuff.
+impl Romanizable for Vec<Syllable> {
+    fn romanize(self) -> String {
+        let transformed = self
+            .palatalization()
+            .t_transcribe()
+            .nasal_assimilate()
+            .epenthetic_insertion();
+
+        let some_syllables = transformed.clone().into_iter().map(|s| Some(s));
+        let left = iter::once(None).chain(some_syllables.clone());
+        let right = some_syllables.skip(1).chain(iter::once(None));
+
+        left.zip(transformed.into_iter()).zip(right)
+            .map(|((prev, Syllable (c, ju, jo)), next)| {
+                let romanized_choseong = if let Some(Syllable (_, _, prev_jo)) = prev {
+                    match (prev_jo, &c) {
+                        (Jongseong::Rieul, Choseong::Rieul) => "l".into(),
+                        (Jongseong::Nieun, Choseong::Rieul) => "l".into(),
+                        (Jongseong::Rieul, Choseong::Nieun) => "l".into(),
+                        _ => c.romanize()
+                    }
+                } else {
+                    c.romanize()
+                };
+
+                let romanized_joseong = if let Some(Syllable (next_c, _, _)) = next {
+                    match (&jo, next_c) {
+                        (Jongseong::Giyeok, Choseong::Ieung) => "g".into(),
+                        (Jongseong::Digeut, Choseong::Ieung) => "d".into(),
+                        (Jongseong::Bieup, Choseong::Ieung) => "b".into(),
+                        (Jongseong::Rieul, Choseong::Ieung) => "r".into(),
+
+                        (Jongseong::Nieun, Choseong::Rieul) => "l".into(),
+                        _ => jo.romanize(),
+                    }
+                } else {
+                    jo.romanize()
+                };
+
+                format!("{}{}{}", romanized_choseong, ju.romanize(), romanized_joseong)
+            }).collect()
     }
 }
 
@@ -319,7 +343,7 @@ impl Romanizable for Choseong {
             // ㅊ
             Chieut => "ch",
             // ㅋ
-            Kiyeok => "k",
+            Kieuk => "k",
             // ㅌ
             Tieut => "t",
             // ㅍ

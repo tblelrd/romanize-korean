@@ -43,6 +43,12 @@ mod common_examples {
         assert_eq!(&convert("안녕히 가세요"), "annyeonghi gaseyo");
         assert_eq!(&convert("안녕히 계세요"), "annyeonghi gyeseyo");
         assert_eq!(&convert("잘 가요"), "jal gayo");
+
+        assert_eq!(&convert("만나서 반갑습니다"), "mannaseo bangapseumnida");
+
+        assert_eq!(&convert("한국에 가서 영화를 봤어요"), "hanguge gaseo yeonghwareul bwasseoyo");
+        assert_eq!(&convert("국민들이 많이 모였어요"), "gungmindeuri manhi moyeosseoyo");
+        assert_eq!(&convert("한국말을 잘하려면 많이 연습해야 해요"), "hangungmareul jalharyeomyeon manhi yeonseuphaeya haeyo");
     }
 
 }
@@ -114,4 +120,21 @@ mod functionality_tests {
         assert_eq!(&convert("식용유"), "sigyongnyu");
     }
 
+    /// The case of palatalization
+    #[test]
+    fn palatalization() {
+        assert_eq!(&convert("해돋이"), "haedoji");
+        assert_eq!(&convert("같이"), "gachi");
+        assert_eq!(&convert("굳히다"), "guchida");
+
+        // Examples from https://www.mykoreanlesson.com/post/korean-pronunciation-lesson-palatalization
+        assert_eq!(&convert("굳이"), "guji");
+        assert_eq!(&convert("맏이"), "maji");
+
+        assert_eq!(&convert("밭이"), "bachi");
+        assert_eq!(&convert("샅샅이"), "satsachi");
+
+        assert_eq!(&convert("묻히다"), "muchida");
+        assert_eq!(&convert("닫히다"), "dachida");
+    }
 }

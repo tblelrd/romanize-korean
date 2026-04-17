@@ -40,23 +40,6 @@ impl TryFrom<char> for Syllable {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum Jamo {
-    Choseong(Choseong),
-    Jungseong(Jungseong),
-    Jongseong(Jongseong),
-}
-
-pub fn from_syllables_to_jamo(value: Vec<Syllable>) -> Vec<Jamo> {
-    value.into_iter().fold(vec![], |mut js, Syllable (choseong, jungseong, jongseong)| {
-        js.push(Jamo::Choseong(choseong));
-        js.push(Jamo::Jungseong(jungseong));
-        js.push(Jamo::Jongseong(jongseong));
-
-        js
-    })
-}
-
 /// Initial consonant.
 #[derive(Clone, Debug)]
 pub enum Choseong {
@@ -91,7 +74,7 @@ pub enum Choseong {
     /// ㅊ
     Chieut,
     /// ㅋ
-    Kiyeok,
+    Kieuk,
     /// ㅌ
     Tieut,
     /// ㅍ
@@ -121,10 +104,38 @@ impl TryFrom<u32> for Choseong {
             12 => Jieut,
             13 => SsangJieut,
             14 => Chieut,
-            15 => Kiyeok,
+            15 => Kieuk,
             16 => Tieut,
             17 => Pieup,
             18 => Hieuh,
+            _ => Err(())?,
+        })
+    }
+}
+
+impl TryFrom<Jongseong> for Choseong {
+    type Error = ();
+
+    fn try_from(value: Jongseong) -> Result<Self, Self::Error> {
+        use Jongseong as J;
+        use Choseong as C;
+        Ok(match value {
+            J::Giyeok => C::Giyeok,
+            J::SsangGiyeok => C::SsangGiyeok,
+            J::Nieun => C::Nieun,
+            J::Digeut => C::Digeut,
+            J::Rieul => C::Rieul,
+            J::Mieum => C::Mieum,
+            J::Bieup => C::Bieup,
+            J::Siot => C::Siot,
+            J::SsangSiot => C::SsangSiot,
+            J::Ieung => C::Ieung,
+            J::Jieut => C::Jieut,
+            J::Chieut => C::Chieut,
+            J::Kieuk => C::Kieuk,
+            J::Tieut => C::Tieut,
+            J::Pieup => C::Pieup,
+            J::Hieuh => C::Hieuh,
             _ => Err(())?,
         })
     }
@@ -225,6 +236,34 @@ impl TryFrom<u32> for Jongseong {
             25 => Tieut,
             26 => Pieup,
             27 => Hieuh,
+            _ => Err(())?,
+        })
+    }
+}
+
+impl TryFrom<Choseong> for Jongseong {
+    type Error = ();
+
+    fn try_from(value: Choseong) -> Result<Self, Self::Error> {
+        use Jongseong as J;
+        use Choseong as C;
+        Ok(match value {
+            C::Giyeok => J::Giyeok,
+            C::SsangGiyeok => J::SsangGiyeok,
+            C::Nieun => J::Nieun,
+            C::Digeut => J::Digeut,
+            C::Rieul => J::Rieul,
+            C::Mieum => J::Mieum,
+            C::Bieup => J::Bieup,
+            C::Siot => J::Siot,
+            C::SsangSiot => J::SsangSiot,
+            C::Ieung => J::Ieung,
+            C::Jieut => J::Jieut,
+            C::Chieut => J::Chieut,
+            C::Kieuk => J::Kieuk,
+            C::Tieut => J::Tieut,
+            C::Pieup => J::Pieup,
+            C::Hieuh => J::Hieuh,
             _ => Err(())?,
         })
     }
