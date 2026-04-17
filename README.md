@@ -7,6 +7,8 @@ This crate is very early in development, and I do not know how to
 speak korean, so any help would be much appreciated! (I wrote this
 crate to help romanize foreign lyrics my lyrics program.)
 
+Currently able to do up to the palatalization section of [this document](https://www.korean.go.kr/front_eng/roman/roman_01.do).
+
 # Usage
 
 To romanize:
