@@ -29,7 +29,7 @@ mod common_examples {
 
     /// Common sentences
     #[test]
-    fn greetings() {
+    fn sentences() {
         assert_eq!(&convert("안녕"), "annyeong");
         assert_eq!(&convert("여보세요"), "yeoboseyo");
 
@@ -61,7 +61,7 @@ mod functionality_tests {
     use super::*;
 
     #[test]
-    fn test_is_korean() {
+    fn test_has_korean() {
         assert!(has_korean("안녕"));
         assert!(has_korean("안녕 Hello"));
         assert!(!has_korean("Hello"));
